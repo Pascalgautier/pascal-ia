@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DOG MORPH — Live Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #070a07;
+    --panel: #0c110c;
+    --border: rgba(57,255,20,0.12);
+    --green: #39ff14;
+    --orange: #e8430a;
+    --white: #e8f0e8;
+    --dim: rgba(232,240,232,0.4);
+    --red: #ff3333;
+    --mono: 'Space Mono', monospace;
+    --display: 'Bebas Neue', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--white);
+    font-family: var(--mono);
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(57,255,20,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(57,255,20,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none; z-index: 0;
+  }
+
+  /* HEADER */
+  header {
+    position: relative; z-index: 10;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    background: rgba(7,10,7,0.95);
+  }
+
+  .header-left { display: flex; align-items: center; gap: 20px; }
+
+  .logo {
+    font-family: var(--display);
+    font-size: 28px; letter-spacing: 0.1em;
+    color: var(--white);
+  }
+  .logo span { color: var(--green); }
+
+  .status-pill {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--green);
+    border: 1px solid var(--green);
+    padding: 5px 12px; border-radius: 20px;
+  }
+  .status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green);
+    animation: blink 1s ease infinite;
+  }
+  .status-pill.stopped { color: var(--dim); border-color: var(--dim); }
+  .status-pill.stopped .status-dot { background: var(--dim); animation: none; }
+  .status-pill.alert { color: var(--red); border-color: var(--red); }
+  .status-pill.alert .status-dot { background: var(--red); }
+
+  .header-right { display: flex; gap: 12px; align-items: center; }
+
+  .timestamp {
+    font-size: 10px; color: var(--dim); letter-spacing: 0.1em;
+  }
+
+  /* CONTROLS */
+  .controls {
+    position: relative; z-index: 10;
+    padding: 16px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    background: rgba(7,10,7,0.8);
+  }
+
+  .ctrl-label {
+    font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 4px;
+  }
+
+  .ctrl-group { display: flex; flex-direction: column; }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 120px; height: 3px;
+    background: rgba(57,255,20,0.2);
+    border-radius: 2px; outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--green);
+    cursor: pointer;
+  }
+
+  .ctrl-val {
+    font-size: 11px; color: var(--green);
+    margin-top: 4px; letter-spacing: 0.05em;
+  }
+
+  .btn {
+    font-family: var(--mono);
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    padding: 10px 20px; border: none; cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-start {
+    background: var(--green); color: black;
+  }
+  .btn-start:hover { opacity: 0.85; }
+
+  .btn-stop {
+    background: transparent; color: var(--red);
+    border: 1px solid var(--red);
+  }
+  .btn-stop:hover { background: var(--red); color: white; }
+
+  .btn-reset {
+    background: transparent; color: var(--dim);
+    border: 1px solid var(--border);
+  }
+  .btn-reset:hover { color: var(--white); border-color: var(--white); }
+
+  .btn-inject {
+    background: var(--orange); color: white;
+  }
+  .btn-inject:hover { opacity: 0.85; }
+
+  .divider { width: 1px; height: 40px; background: var(--border); }
+
+  /* MAIN GRID */
+  .dashboard {
+    position: relative; z-index: 1;
+    display: grid;
+    grid-template-columns: 280px 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 1px;
+    background: var(--border);
+    margin: 1px;
+  }
+
+  .panel {
+    background: var(--panel);
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .panel-tag {
+    font-size: 9px; letter-spacing: 0.25em; text-transform: uppercase;
+    color: var(--green); margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel-tag::before {
+    content: '//'; color: var(--green); opacity: 0.5;
+  }
+
+  /* STUDIO MAP */
+  .map-panel {
+    grid-row: span 2;
+  }
+
+  #studioCanvas {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    display: block;
+  }
+
+  .map-legend {
+    display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 9px; color: var(--dim); letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* KPI BAR */
+  .kpi-bar {
+    grid-column: span 2;
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    gap: 1px; background: var(--border);
+    padding: 0;
+  }
+
+  .kpi {
+    background: var(--panel);
+    padding: 16px 20px;
+  }
+
+  .kpi-label {
+    font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 6px;
+  }
+
+  .kpi-val {
+    font-family: var(--display);
+    font-size: 32px; line-height: 1;
+    color: var(--green);
+  }
+
+  .kpi-val.warning { color: var(--orange); }
+  .kpi-val.danger { color: var(--red); animation: blink 0.5s ease infinite; }
+
+  .kpi-unit {
+    font-size: 9px; color: var(--dim); margin-top: 4px; letter-spacing: 0.1em;
+  }
+
+  /* CHARTS */
+  .chart-panel { }
+
+  canvas.chart { width: 100% !important; }
+
+  /* ANOMALY LOG */
+  .log-panel {
+    grid-column: span 2;
+    max-height: 200px;
+  }
+
+  .log-scroll {
+    height: 140px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--green) transparent;
+  }
+
+  .log-entry {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(57,255,20,0.05);
+    font-size: 10px; line-height: 1.5;
+    animation: slideIn 0.3s ease;
+  }
+
+  .log-time { color: var(--dim); flex-shrink: 0; letter-spacing: 0.05em; }
+
+  .log-type {
+    font-weight: 700; flex-shrink: 0; width: 100px;
+    letter-spacing: 0.05em;
+  }
+  .log-type.NOISE { color: var(--orange); }
+  .log-type.INSTABILITY { color: var(--red); }
+  .log-type.BATTERY { color: #ffaa00; }
+  .log-type.OK { color: var(--green); }
+
+  .log-msg { color: var(--dim); }
+
+  /* INJECT MODAL */
+  .inject-bar {
+    position: relative; z-index: 10;
+    padding: 12px 32px;
+    border-top: 1px solid var(--border);
+    background: rgba(232,67,10,0.05);
+    display: none; gap: 16px; align-items: center;
+  }
+  .inject-bar.visible { display: flex; }
+  .inject-label { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--orange); }
+
+  .inject-btn {
+    font-family: var(--mono); font-size: 9px; font-weight: 700;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    padding: 6px 14px; border: 1px solid; cursor: pointer;
+    transition: all 0.15s; background: transparent;
+  }
+  .inject-btn.noise { color: var(--orange); border-color: var(--orange); }
+  .inject-btn.noise:hover { background: var(--orange); color: white; }
+  .inject-btn.instab { color: var(--red); border-color: var(--red); }
+  .inject-btn.instab:hover { background: var(--red); color: white; }
+  .inject-btn.battery { color: #ffaa00; border-color: #ffaa00; }
+  .inject-btn.battery:hover { background: #ffaa00; color: black; }
+  .inject-btn.normal { color: var(--green); border-color: var(--green); }
+  .inject-btn.normal:hover { background: var(--green); color: black; }
+
+  /* FOOTER */
+  footer {
+    position: relative; z-index: 10;
+    padding: 12px 32px;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 9px; color: var(--dim); letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  footer a { color: var(--green); text-decoration: none; }
+
+  @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+  @keyframes slideIn { from { opacity:0; transform:translateX(-8px); } to { opacity:1; transform:translateX(0); } }
+
+  @media (max-width: 900px) {
+    .dashboard { grid-template-columns: 1fr; }
+    .map-panel { grid-row: span 1; }
+    .kpi-bar { grid-column: span 1; grid-template-columns: repeat(3,1fr); }
+    .log-panel { grid-column: span 1; }
+    #studioCanvas { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo">DOG<span>MORPH</span></div>
+    <div class="status-pill stopped" id="statusPill">
+      <div class="status-dot"></div>
+      <span id="statusText">STANDBY</span>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="timestamp" id="clockDisplay">2026-05-12 · 09:00:00</div>
+  </div>
+</header>
+
+<div class="controls">
+  <div class="ctrl-group">
+    <div class="ctrl-label">Vitesse robot</div>
+    <input type="range" id="speedSlider" min="0.1" max="1.0" step="0.1" value="0.3">
+    <div class="ctrl-val" id="speedVal">0.3 m/s</div>
+  </div>
+  <div class="ctrl-group">
+    <div class="ctrl-label">Niveau sonore base</div>
+    <input type="range" id="noiseSlider" min="30" max="55" step="1" value="42">
+    <div class="ctrl-val" id="noiseVal">42 dB</div>
+  </div>
+  <div class="ctrl-group">
+    <div class="ctrl-label">Turbulence</div>
+    <input type="range" id="turbSlider" min="0" max="5" step="0.5" value="1">
+    <div class="ctrl-val" id="turbVal">1.0</div>
+  </div>
+  <div class="divider"></div>
+  <button class="btn btn-start" onclick="startSim()">▶ START</button>
+  <button class="btn btn-stop" onclick="stopSim()">■ STOP</button>
+  <button class="btn btn-reset" onclick="resetSim()">↺ RESET</button>
+  <div class="divider"></div>
+  <button class="btn btn-inject" onclick="toggleInject()">⚡ INJECTER ANOMALIE</button>
+</div>
+
+<div class="inject-bar" id="injectBar">
+  <div class="inject-label">// Injecter :</div>
+  <button class="inject-btn noise" onclick="injectAnomaly('NOISE')">🔊 Bruit excessif</button>
+  <button class="inject-btn instab" onclick="injectAnomaly('INSTABILITY')">⚠️ Instabilité</button>
+  <button class="inject-btn battery" onclick="injectAnomaly('BATTERY')">🔋 Batterie critique</button>
+  <button class="inject-btn normal" onclick="injectAnomaly('OK')">✓ Retour normal</button>
+</div>
+
+<div class="dashboard">
+
+  <!-- STUDIO MAP -->
+  <div class="panel map-panel">
+    <div class="panel-tag">Carte Studio · Trajectoire Live</div>
+    <canvas id="studioCanvas" width="240" height="300"></canvas>
+    <div class="map-legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#39ff14"></div>Position actuelle</div>
+      <div class="legend-item"><div class="legend-dot" style="background:rgba(57,255,20,0.3)"></div>Trajectoire</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ff3333"></div>Anomalie</div>
+    </div>
+  </div>
+
+  <!-- KPI BAR -->
+  <div class="kpi-bar panel" style="padding:0;border:none;">
+    <div class="kpi">
+      <div class="kpi-label">Batterie</div>
+      <div class="kpi-val" id="kpiBattery">98.0</div>
+      <div class="kpi-unit">%</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Vitesse</div>
+      <div class="kpi-val" id="kpiSpeed">0.0</div>
+      <div class="kpi-unit">m/s</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Niveau sonore</div>
+      <div class="kpi-val" id="kpiNoise">--</div>
+      <div class="kpi-unit">dB(A)</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Température CPU</div>
+      <div class="kpi-val" id="kpiTemp">--</div>
+      <div class="kpi-unit">°C</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Statut</div>
+      <div class="kpi-val" id="kpiStatus" style="font-size:18px;padding-top:6px;">STANDBY</div>
+      <div class="kpi-unit" id="kpiStatusSub">En attente</div>
+    </div>
+  </div>
+
+  <!-- BATTERY CHART -->
+  <div class="panel chart-panel">
+    <div class="panel-tag">Niveau de batterie</div>
+    <canvas id="batteryChart" class="chart" height="140"></canvas>
+  </div>
+
+  <!-- NOISE CHART -->
+  <div class="panel chart-panel">
+    <div class="panel-tag">Niveau sonore · Seuil 45 dB(A)</div>
+    <canvas id="noiseChart" class="chart" height="140"></canvas>
+  </div>
+
+  <!-- LOG -->
+  <div class="panel log-panel">
+    <div class="panel-tag">Journal des anomalies · <span id="anomalyCount" style="color:var(--white)">0 événements</span></div>
+    <div class="log-scroll" id="logScroll">
+      <div class="log-entry">
+        <span class="log-time">--:--:--</span>
+        <span class="log-type OK">SYSTEM</span>
+        <span class="log-msg">Dashboard initialisé — appuie sur START pour lancer la simulation</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <div>// Pascal Gautier · Pascal Robotics · DOG MORPH Dashboard v1.0</div>
+  <div><a href="index.html">← Formation IA</a> &nbsp;//&nbsp; <a href="robotics-analyst.html">AI & Robotics →</a></div>
+</footer>
+
+<script>
+// ═══════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════
+let simInterval = null;
+let isRunning = false;
+let tick = 0;
+let forcedAnomaly = null;
+
+let state = {
+  x: 0, y: 0, heading: 0,
+  battery: 98.0,
+  speed: 0.3,
+  noise: 42,
+  temp: 58,
+  fan: 3000,
+  status: 'STANDBY',
+  time: new Date('2026-05-12T09:00:00')
+};
+
+let trajectory = [];
+let anomalyLog = [];
+let maxPoints = 60;
+
+// ═══════════════════════════════════════
+// CHARTS INIT
+// ═══════════════════════════════════════
+const chartDefaults = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: { duration: 0 },
+  plugins: { legend: { display: false } },
+  scales: {
+    x: {
+      display: false,
+      grid: { color: 'rgba(57,255,20,0.05)' }
+    },
+    y: {
+      grid: { color: 'rgba(57,255,20,0.08)' },
+      ticks: {
+        color: 'rgba(232,240,232,0.4)',
+        font: { family: 'Space Mono', size: 9 }
+      }
+    }
+  }
+};
+
+const batteryCtx = document.getElementById('batteryChart').getContext('2d');
+const batteryChart = new Chart(batteryCtx, {
+  type: 'line',
+  data: {
+    labels: Array(maxPoints).fill(''),
+    datasets: [{
+      data: Array(maxPoints).fill(null),
+      borderColor: '#39ff14',
+      backgroundColor: 'rgba(57,255,20,0.08)',
+      borderWidth: 2,
+      pointRadius: 0,
+      fill: true,
+      tension: 0.4
+    }]
+  },
+  options: {
+    ...chartDefaults,
+    scales: {
+      ...chartDefaults.scales,
+      y: { ...chartDefaults.scales.y, min: 0, max: 100,
+        ticks: { ...chartDefaults.scales.y.ticks,
+          callback: v => v + '%'
+        }
+      }
+    }
+  }
+});
+
+const noiseCtx = document.getElementById('noiseChart').getContext('2d');
+const noiseChart = new Chart(noiseCtx, {
+  type: 'bar',
+  data: {
+    labels: Array(maxPoints).fill(''),
+    datasets: [
+      {
+        data: Array(maxPoints).fill(null),
+        backgroundColor: (ctx) => {
+          const v = ctx.raw;
+          if (v === null) return 'transparent';
+          return v > 45 ? 'rgba(255,51,51,0.8)' : 'rgba(232,67,10,0.6)';
+        },
+        borderWidth: 0,
+        borderRadius: 1
+      },
+      {
+        type: 'line',
+        data: Array(maxPoints).fill(45),
+        borderColor: 'rgba(255,51,51,0.6)',
+        borderWidth: 1,
+        borderDash: [4,4],
+        pointRadius: 0,
+        fill: false
+      }
+    ]
+  },
+  options: {
+    ...chartDefaults,
+    scales: {
+      ...chartDefaults.scales,
+      y: { ...chartDefaults.scales.y, min: 25, max: 60,
+        ticks: { ...chartDefaults.scales.y.ticks,
+          callback: v => v + 'dB'
+        }
+      }
+    }
+  }
+});
+
+// ═══════════════════════════════════════
+// STUDIO CANVAS
+// ═══════════════════════════════════════
+const canvas = document.getElementById('studioCanvas');
+const ctx2d = canvas.getContext('2d');
+const SCALE = 22; // pixels per meter
+const OX = 120, OY = 150; // origin center
+
+function drawStudio() {
+  const W = canvas.width, H = canvas.height;
+  ctx2d.clearRect(0, 0, W, H);
+
+  // Background
+  ctx2d.fillStyle = '#0a0d0a';
+  ctx2d.fillRect(0, 0, W, H);
+
+  // Grid
+  ctx2d.strokeStyle = 'rgba(57,255,20,0.07)';
+  ctx2d.lineWidth = 0.5;
+  for (let i = -5; i <= 5; i++) {
+    ctx2d.beginPath();
+    ctx2d.moveTo(OX + i*SCALE, 0);
+    ctx2d.lineTo(OX + i*SCALE, H);
+    ctx2d.stroke();
+    ctx2d.beginPath();
+    ctx2d.moveTo(0, OY + i*SCALE);
+    ctx2d.lineTo(W, OY + i*SCALE);
+    ctx2d.stroke();
+  }
+
+  // Studio boundary
+  ctx2d.strokeStyle = 'rgba(57,255,20,0.25)';
+  ctx2d.lineWidth = 1.5;
+  ctx2d.strokeRect(OX - 5*SCALE, OY - 5*SCALE, 10*SCALE, 10*SCALE);
+
+  // Camera zones
+  ctx2d.strokeStyle = 'rgba(232,67,10,0.2)';
+  ctx2d.lineWidth = 1;
+  ctx2d.setLineDash([3,3]);
+  ctx2d.beginPath();
+  ctx2d.arc(OX - 3*SCALE, OY - 3*SCALE, SCALE*1.2, 0, Math.PI*2);
+  ctx2d.stroke();
+  ctx2d.beginPath();
+  ctx2d.arc(OX + 3*SCALE, OY + 2*SCALE, SCALE*0.8, 0, Math.PI*2);
+  ctx2d.stroke();
+  ctx2d.setLineDash([]);
+
+  // Zone labels
+  ctx2d.fillStyle = 'rgba(232,67,10,0.5)';
+  ctx2d.font = '7px Space Mono';
+  ctx2d.fillText('CAM A', OX - 3*SCALE - 16, OY - 3*SCALE - SCALE*1.2 - 4);
+  ctx2d.fillText('CAM B', OX + 3*SCALE - 14, OY + 2*SCALE - SCALE*0.8 - 4);
+
+  // Trajectory
+  if (trajectory.length > 1) {
+    ctx2d.beginPath();
+    ctx2d.strokeStyle = 'rgba(57,255,20,0.25)';
+    ctx2d.lineWidth = 1.5;
+    trajectory.forEach((p, i) => {
+      const px = OX + p.x * SCALE;
+      const py = OY - p.y * SCALE;
+      if (i === 0) ctx2d.moveTo(px, py);
+      else ctx2d.lineTo(px, py);
+    });
+    ctx2d.stroke();
+
+    // Anomaly dots on trajectory
+    trajectory.forEach(p => {
+      if (p.anomaly && p.anomaly !== 'OK') {
+        ctx2d.beginPath();
+        ctx2d.arc(OX + p.x*SCALE, OY - p.y*SCALE, 3, 0, Math.PI*2);
+        ctx2d.fillStyle = '#ff3333';
+        ctx2d.fill();
+      }
+    });
+  }
+
+  // Robot position
+  const rx = OX + state.x * SCALE;
+  const ry = OY - state.y * SCALE;
+
+  // Glow
+  const grd = ctx2d.createRadialGradient(rx, ry, 0, rx, ry, 18);
+  grd.addColorStop(0, 'rgba(57,255,20,0.3)');
+  grd.addColorStop(1, 'transparent');
+  ctx2d.fillStyle = grd;
+  ctx2d.beginPath();
+  ctx2d.arc(rx, ry, 18, 0, Math.PI*2);
+  ctx2d.fill();
+
+  // Robot body
+  const isAlert = state.status !== 'OK' && state.status !== 'STANDBY';
+  ctx2d.fillStyle = isAlert ? '#ff3333' : '#39ff14';
+  ctx2d.beginPath();
+  ctx2d.arc(rx, ry, 7, 0, Math.PI*2);
+  ctx2d.fill();
+
+  // Direction arrow
+  const rad = state.heading * Math.PI / 180;
+  ctx2d.strokeStyle = isAlert ? '#ff3333' : '#39ff14';
+  ctx2d.lineWidth = 2;
+  ctx2d.beginPath();
+  ctx2d.moveTo(rx, ry);
+  ctx2d.lineTo(rx + Math.cos(rad)*14, ry - Math.sin(rad)*14);
+  ctx2d.stroke();
+
+  // Coordinates
+  ctx2d.fillStyle = 'rgba(232,240,232,0.4)';
+  ctx2d.font = '8px Space Mono';
+  ctx2d.fillText(`X:${state.x.toFixed(2)}m  Y:${state.y.toFixed(2)}m`, 8, H - 8);
+}
+
+// ═══════════════════════════════════════
+// SIMULATION
+// ═══════════════════════════════════════
+function startSim() {
+  if (isRunning) return;
+  isRunning = true;
+  updateStatusPill('running');
+  simInterval = setInterval(simStep, 400);
+  addLog('SYSTEM', 'OK', 'Simulation démarrée');
+}
+
+function stopSim() {
+  if (!isRunning) return;
+  isRunning = false;
+  clearInterval(simInterval);
+  updateStatusPill('stopped');
+  addLog('SYSTEM', 'OK', 'Simulation arrêtée');
+  document.getElementById('kpiStatus').textContent = 'STOP';
+  document.getElementById('kpiSpeed').textContent = '0.0';
+}
+
+function resetSim() {
+  stopSim();
+  tick = 0;
+  state = { x:0, y:0, heading:0, battery:98.0, speed:0.3, noise:42, temp:58, fan:3000, status:'STANDBY', time: new Date('2026-05-12T09:00:00') };
+  trajectory = [];
+  anomalyLog = [];
+  forcedAnomaly = null;
+
+  // Reset charts
+  batteryChart.data.datasets[0].data = Array(maxPoints).fill(null);
+  noiseChart.data.datasets[0].data = Array(maxPoints).fill(null);
+  batteryChart.update();
+  noiseChart.update();
+
+  document.getElementById('logScroll').innerHTML = '<div class="log-entry"><span class="log-time">--:--:--</span><span class="log-type OK">SYSTEM</span><span class="log-msg">Dashboard réinitialisé</span></div>';
+  document.getElementById('anomalyCount').textContent = '0 événements';
+  document.getElementById('kpiBattery').textContent = '98.0';
+  document.getElementById('kpiSpeed').textContent = '0.0';
+  document.getElementById('kpiNoise').textContent = '--';
+  document.getElementById('kpiTemp').textContent = '--';
+  document.getElementById('kpiStatus').textContent = 'STANDBY';
+  document.getElementById('kpiStatus').className = 'kpi-val';
+  document.getElementById('kpiStatusSub').textContent = 'En attente';
+  updateStatusPill('stopped');
+  drawStudio();
+}
+
+function simStep() {
+  tick++;
+  const speed = parseFloat(document.getElementById('speedSlider').value);
+  const noiseBase = parseFloat(document.getElementById('noiseSlider').value);
+  const turb = parseFloat(document.getElementById('turbSlider').value);
+
+  // Update time
+  state.time = new Date(state.time.getTime() + 6000);
+
+  // Move robot
+  state.heading += (Math.random() - 0.5) * 12 * turb;
+  state.speed = speed + (Math.random() - 0.5) * 0.05;
+  const rad = state.heading * Math.PI / 180;
+  state.x += state.speed * Math.cos(rad) * 0.4;
+  state.y += state.speed * Math.sin(rad) * 0.4;
+  state.x = Math.max(-4.5, Math.min(4.5, state.x));
+  state.y = Math.max(-4.5, Math.min(4.5, state.y));
+
+  // Battery drain
+  state.battery -= 0.02 + Math.random() * 0.03;
+  state.battery = Math.max(0, state.battery);
+
+  // Noise
+  state.noise = noiseBase + (Math.random() - 0.5) * 5;
+  state.temp = 58 + Math.random() * 8 + (speed * 5);
+
+  // Determine status
+  let newStatus = 'OK';
+
+  if (forcedAnomaly) {
+    newStatus = forcedAnomaly;
+    if (forcedAnomaly !== 'BATTERY') forcedAnomaly = null; // one-shot except battery
+  } else {
+    if (state.battery < 15) newStatus = 'BATTERY';
+    else if (state.noise > 47) newStatus = 'NOISE';
+    else if (Math.abs(state.heading % 360) > 0 && turb > 3 && Math.random() > 0.85) newStatus = 'INSTABILITY';
+  }
+
+  const prevStatus = state.status;
+  state.status = newStatus;
+
+  // Log anomaly on change
+  if (newStatus !== 'OK' && newStatus !== prevStatus) {
+    const msgs = {
+      NOISE: `Bruit ${state.noise.toFixed(1)} dB > 45 dB — seuil broadcast dépassé`,
+      INSTABILITY: `Instabilité détectée — pitch ${(Math.random()*2+1).toFixed(1)}° > 2°`,
+      BATTERY: `Batterie critique — ${state.battery.toFixed(1)}% restant`
+    };
+    addLog(newStatus, newStatus, msgs[newStatus] || 'Anomalie détectée');
+    updateStatusPill('alert');
+  } else if (newStatus === 'OK' && prevStatus !== 'OK' && prevStatus !== 'STANDBY') {
+    addLog('SYSTEM', 'OK', 'Retour à la normale');
+    updateStatusPill('running');
+  }
+
+  // Update trajectory
+  trajectory.push({ x: state.x, y: state.y, anomaly: newStatus });
+  if (trajectory.length > 200) trajectory.shift();
+
+  // Update charts
+  const bData = batteryChart.data.datasets[0].data;
+  bData.push(parseFloat(state.battery.toFixed(1)));
+  if (bData.length > maxPoints) bData.shift();
+
+  const nData = noiseChart.data.datasets[0].data;
+  nData.push(parseFloat(state.noise.toFixed(1)));
+  if (nData.length > maxPoints) nData.shift();
+
+  batteryChart.update('none');
+  noiseChart.update('none');
+
+  // Update KPIs
+  const batEl = document.getElementById('kpiBattery');
+  batEl.textContent = state.battery.toFixed(1);
+  batEl.className = 'kpi-val' + (state.battery < 20 ? ' danger' : state.battery < 40 ? ' warning' : '');
+
+  document.getElementById('kpiSpeed').textContent = state.speed.toFixed(2);
+
+  const noiseEl = document.getElementById('kpiNoise');
+  noiseEl.textContent = state.noise.toFixed(1);
+  noiseEl.className = 'kpi-val' + (state.noise > 47 ? ' danger' : state.noise > 45 ? ' warning' : '');
+
+  const tempEl = document.getElementById('kpiTemp');
+  tempEl.textContent = state.temp.toFixed(0);
+  tempEl.className = 'kpi-val' + (state.temp > 70 ? ' danger' : state.temp > 65 ? ' warning' : '');
+
+  const statusEl = document.getElementById('kpiStatus');
+  const statusMap = { OK:'OK', NOISE:'BRUIT', INSTABILITY:'INSTAB.', BATTERY:'BATT.!', STANDBY:'STANDBY' };
+  statusEl.textContent = statusMap[newStatus] || newStatus;
+  statusEl.className = 'kpi-val' + (newStatus === 'OK' ? '' : ' danger');
+  document.getElementById('kpiStatusSub').textContent = newStatus === 'OK' ? 'Nominal' : 'ALERTE';
+
+  // Clock
+  document.getElementById('clockDisplay').textContent =
+    state.time.toISOString().replace('T', ' · ').substring(0, 21);
+
+  drawStudio();
+}
+
+// ═══════════════════════════════════════
+// ANOMALY INJECTION
+// ═══════════════════════════════════════
+function injectAnomaly(type) {
+  if (!isRunning) { startSim(); }
+  forcedAnomaly = type === 'OK' ? null : type;
+  const labels = { NOISE:'Bruit excessif injecté', INSTABILITY:'Instabilité injectée', BATTERY:'Batterie critique injectée', OK:'Retour normal forcé' };
+  addLog('INJECT', type === 'OK' ? 'OK' : type, labels[type]);
+  if (type === 'OK') updateStatusPill('running');
+  else updateStatusPill('alert');
+}
+
+function toggleInject() {
+  const bar = document.getElementById('injectBar');
+  bar.classList.toggle('visible');
+}
+
+// ═══════════════════════════════════════
+// LOG
+// ═══════════════════════════════════════
+function addLog(type, severity, msg) {
+  const timeStr = state.time.toTimeString().substring(0,8);
+  anomalyLog.push({ time: timeStr, type, severity, msg });
+
+  const scroll = document.getElementById('logScroll');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML = `
+    <span class="log-time">${timeStr}</span>
+    <span class="log-type ${severity}">${type}</span>
+    <span class="log-msg">${msg}</span>
+  `;
+  scroll.insertBefore(entry, scroll.firstChild);
+
+  // Keep only 30 entries
+  while (scroll.children.length > 30) scroll.removeChild(scroll.lastChild);
+
+  const count = anomalyLog.filter(e => e.severity !== 'OK').length;
+  document.getElementById('anomalyCount').textContent = `${count} événement${count > 1 ? 's' : ''}`;
+}
+
+// ═══════════════════════════════════════
+// STATUS PILL
+// ═══════════════════════════════════════
+function updateStatusPill(mode) {
+  const pill = document.getElementById('statusPill');
+  const text = document.getElementById('statusText');
+  pill.className = 'status-pill';
+  if (mode === 'running') { pill.classList.add(''); text.textContent = 'LIVE'; }
+  else if (mode === 'stopped') { pill.classList.add('stopped'); text.textContent = 'STANDBY'; }
+  else if (mode === 'alert') { pill.classList.add('alert'); text.textContent = 'ALERTE'; }
+}
+
+// ═══════════════════════════════════════
+// SLIDERS
+// ═══════════════════════════════════════
+document.getElementById('speedSlider').addEventListener('input', function() {
+  document.getElementById('speedVal').textContent = this.value + ' m/s';
+});
+document.getElementById('noiseSlider').addEventListener('input', function() {
+  document.getElementById('noiseVal').textContent = this.value + ' dB';
+});
+document.getElementById('turbSlider').addEventListener('input', function() {
+  document.getElementById('turbVal').textContent = parseFloat(this.value).toFixed(1);
+});
+
+// Init
+drawStudio();
+</script>
+</body>
+</html>
